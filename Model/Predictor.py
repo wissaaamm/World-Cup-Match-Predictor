@@ -3,34 +3,35 @@ import torch
 import pandas as pd
 import numpy as np
 from Network import Network
-from sklearn.preprocessing import StandardScaler
 
-
-FEATURES = ["loc_home", "loc_neutral", "loc_away", "elo_diff", "form_diff", "rest_diff"]
-TARGETS  = ["home_goals", "away_goals"]
-LAMBDA   = 0.005
+# ── load data ─────────────────────────────────────────────────────────────────
 
 results = pd.read_csv("Datasets/results.csv")
 elo_df  = pd.read_csv("Datasets/elo_ratings.csv")
-dataset = pd.read_csv("Datasets/dataset.csv")
 
 results["date"] = pd.to_datetime(results["date"])
 elo_df["date"]  = pd.to_datetime(elo_df["date"])
-dataset["date"] = pd.to_datetime(dataset["date"])
 
-# initialize scalers
-scaler_elo  = StandardScaler()
-scaler_form = StandardScaler()
-scaler_elo.fit(dataset[["elo_diff"]])
-scaler_form.fit(dataset[["form_diff"]])
-
-# load model
+# ── load model and scalers ────────────────────────────────────────────────────
 
 model = Network()
 model.load_state_dict(torch.load("goal_predictor.pt", weights_only=True))
 model.eval()
 
-# --------------------- Helper Functions ------------------------ #
+scaler_elo  = joblib.load("scaler_elo.pkl")
+scaler_form = joblib.load("scaler_form.pkl")
+
+# ── constants ─────────────────────────────────────────────────────────────────
+
+LAMBDA          = 0.005
+DEFAULT_REST    = 30
+LOCATION_VECTORS = {
+    "home":    [1, 0, 0],
+    "neutral": [0, 1, 0],
+    "away":    [0, 0, 1],
+}
+
+# ── helper functions ──────────────────────────────────────────────────────────
 
 def get_elo(team, date):
     past = elo_df[(elo_df["team"] == team) & (elo_df["date"] < date)]
@@ -69,44 +70,31 @@ def get_rest_days(team, date):
         (results["date"] < date)
     ]
     if past.empty:
-        return 30
+        return DEFAULT_REST
     return (date - past["date"].max()).days
 
 
-def get_location_vector(venue):
-    return {"home": [1, 0, 0], "neutral": [0, 1, 0], "away": [0, 0, 1]}[venue]
-
-
-# ----------------------------------------------------------------------------
-
-scaler_elo  = joblib.load("Models/scaler_elo.pkl")
-scaler_form = joblib.load("Models/scaler_form.pkl")
-
-
-scaler_elo  = joblib.load("Models/scaler_elo.pkl")
-scaler_form = joblib.load("Models/scaler_form.pkl")
+# ── predict ───────────────────────────────────────────────────────────────────
 
 def predict(team1, team2, venue, date=None):
     if date is None:
         date = pd.Timestamp.today()
 
-    elo1  = get_elo(team1, date)
-    elo2  = get_elo(team2, date)
+    elo1 = get_elo(team1, date)
+    elo2 = get_elo(team2, date)
 
     if elo1 is None:
-        print(f"No Elo data found for '{team1}'")
+        print(f"  No Elo data found for '{team1}'")
         return
     if elo2 is None:
-        print(f"No Elo data found for '{team2}'")
+        print(f"  No Elo data found for '{team2}'")
         return
 
     form1 = get_performance_history(team1, date)
     form2 = get_performance_history(team2, date)
     rest1 = get_rest_days(team1, date)
     rest2 = get_rest_days(team2, date)
-    loc   = get_location_vector(venue)
 
-    # mirror build_dataset.py exactly — scale individually, then diff
     elo1_norm  = scaler_elo.transform(np.array([[elo1]]))[0][0]
     elo2_norm  = scaler_elo.transform(np.array([[elo2]]))[0][0]
     elo_diff   = elo1_norm - elo2_norm
@@ -117,7 +105,7 @@ def predict(team1, team2, venue, date=None):
 
     rest_diff  = np.log1p(rest1) - np.log1p(rest2)
 
-    feature_vector = loc + [elo_diff, form_diff, rest_diff]
+    feature_vector = LOCATION_VECTORS[venue] + [elo_diff, form_diff, rest_diff]
     x = torch.tensor([feature_vector], dtype=torch.float32)
 
     with torch.no_grad():
@@ -126,18 +114,21 @@ def predict(team1, team2, venue, date=None):
     g1, g2 = goals[0], goals[1]
 
     print(f"\n  {team1} vs {team2}  |  venue: {venue}")
-    print(f"  ─────────────────────────────")
+    print(f"  ─────────────────────────────────────────")
     print(f"  Predicted score: {team1} {round(g1)} - {round(g2)} {team2}")
     print(f"  (raw: {g1:.2f} - {g2:.2f})\n")
 
     return g1, g2
 
 
-team1  = input("Team 1: ").strip()
-team2  = input("Team 2: ").strip()
-venue  = input("Venue (home / neutral / away): ").strip().lower()
+# ── run ───────────────────────────────────────────────────────────────────────
 
-if venue not in ("home", "neutral", "away"):
-    print("Venue must be: home, neutral, or away")
-else:
-    predict(team1, team2, venue)
+if __name__ == "__main__":
+    team1 = input("Team 1: ").strip()
+    team2 = input("Team 2: ").strip()
+    venue = input("Venue (home / neutral / away): ").strip().lower()
+
+    if venue not in LOCATION_VECTORS:
+        print("  Venue must be: home, neutral, or away")
+    else:
+        predict(team1, team2, venue)
