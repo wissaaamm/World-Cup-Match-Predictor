@@ -158,6 +158,20 @@ df["home_rest_log"] = np.log1p(df["home_rest"])  # log1p = log(1 + x)
 df["away_rest_log"] = np.log1p(df["away_rest"])
 df["rest_diff"] = df["home_rest_log"] - df["away_rest_log"]
 
+cols =  ["loc_home", "loc_neutral", "loc_away", 
+                "elo_diff", "form_diff", "rest_diff", "home_goals", "away_goals"]
+
+# Choose only the desired columns
+df = df[cols]
+
+# Remove any rows with null values
+df = df.dropna()
 
 # save the dataset 
 df.to_csv("Datasets/dataset.csv", index=False)
+
+import joblib
+
+# at the very end of build_dataset.py, after saving the csv
+joblib.dump(scaler_elo,  "scaler_elo.pkl")
+joblib.dump(scaler_form, "scaler_form.pkl")
