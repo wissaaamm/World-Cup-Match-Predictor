@@ -1,9 +1,6 @@
 This is what will be considered in my model
 
 - Elo rating
-- Market Value
-- Average squad age
-- Average squad experience
 - Performance history (With emphasis on more recent matches)
 - Rest Days
 - Match location -> [Home, Neural, Away]
@@ -22,13 +19,17 @@ Now lets look at how will each variable in our vector will be calculated:
 Ratings will be fetched from the Datasets/elo_ratings.csv dataset
 
 2) Performance history (With emphasis on more recent matches)
-3) Rest Days
 
 Performance history cill be calculated using the results.csv, for now we will use the function:
-let x <- +1 if the team won : 0 if the team drew, -1 if the team lost
-Performance history = Sum of: x / (Δ date) to give higher priority to newer games
+let 
+    x = +1  if the team won
+    x =  0  if the team drew
+    x = -1  if the team lost
+        form = sum(x * exp(-λ * Δdays))  we chose λ = 0.005
+
 (We might change the function later)
 
+3) Rest Days
 Rest days will be the date difference of the current date and the last match
 
 4) Match location 
